@@ -68,7 +68,8 @@ class NationalVehicleStockDataProcessor:
         phev_stock.rename('PHEV', inplace=True)
 
         self.stock_df = pd.concat([total_stock, icev_stock, ev_stock, bev_stock, phev_stock], axis=1)[::-1]
-
+        self.stock_df.index.name = 'Date'
+        
         return self.stock_df
     
     def run_pipeline(self, raw_data_path: str, meta_data: dict, filters_dict: dict):
@@ -328,11 +329,18 @@ class LSOAVehicleRegistrationDataProcessor:
         print('Pipeline run successfully')
 
     def save_data(self, save_path: str, year_quarter: str):
-        self.v_reg_df.to_csv(os.path.join(save_path, f'v_lsoa_{year_quarter}.csv'))
-        self.ev_reg_df.to_csv(os.path.join(save_path, f'ev_lsoa_{year_quarter}.csv'))
-        self.bev_reg_df.to_csv(os.path.join(save_path, f'bev_lsoa_{year_quarter}.csv'))
-        self.phev_reg_df.to_csv(os.path.join(save_path, f'phev_lsoa_{year_quarter}.csv'))
-        self.icev_reg_df.to_csv(os.path.join(save_path, f'icev_lsoa_{year_quarter}.csv'))
+        dataframes = {
+            'v_lsoa': self.v_reg_df,
+            'ev_lsoa': self.ev_reg_df,
+            'bev_lsoa': self.bev_reg_df,
+            'phev_lsoa': self.phev_reg_df,
+            'icev_lsoa': self.icev_reg_df
+        }
+        
+        for name, df in dataframes.items():
+            df.index.name = 'Date'
+            df.to_csv(os.path.join(save_path, f'{name}_{year_quarter}.csv'))
+        
         print('Data saved successfully')
 
 def main():

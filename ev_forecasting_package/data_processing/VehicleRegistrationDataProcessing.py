@@ -532,7 +532,7 @@ def main():
         }
     }
     national_vehicle_stock_data_processor.run_pipeline(raw_data_path, meta_data,  filters_dict)
-    national_vehicle_stock_data_processor.save_data('../../data/large_datasets/vehicle_registrations/processed_data', year_quarter)
+    national_vehicle_stock_data_processor.save_data(processed_data_path, year_quarter)
 
     # National Vehicle Sales Data Processing
     national_vehicle_sales_data_processor = NationalVehicleSalesDataProcessor()

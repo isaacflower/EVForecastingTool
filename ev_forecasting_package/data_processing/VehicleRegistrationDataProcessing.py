@@ -69,7 +69,7 @@ class NationalVehicleStockDataProcessor:
 
         self.stock_df = pd.concat([total_stock, icev_stock, ev_stock, bev_stock, phev_stock], axis=1)[::-1]
         self.stock_df.index.name = 'Date'
-        
+
         return self.stock_df
     
     def run_pipeline(self, raw_data_path: str, meta_data: dict, filters_dict: dict):
@@ -343,19 +343,155 @@ class LSOAVehicleRegistrationDataProcessor:
         
         print('Data saved successfully')
 
+class VehicleStockModelDataPrepper:
+    def __init__(self):
+        self.stock_eng = None
+        self.additions_eng = None
+        self.removals_eng = None
+        self.v_lsoa = None
+        self.icev_lsoa = None
+        self.ev_lsoa = None
+        self.bev_lsoa = None
+        self.phev_lsoa = None
+        self.data_dict = None
+        self.annual_data_dict = None
+        self.lsoa_subset = None
+        self.model_variables_dict = None
+
+    def load_processed_data(self, data_path: str, file_names: dict) -> None:
+        for attr, file_name in file_names.items():
+            df = pd.read_csv(os.path.join(data_path, file_name)).set_index('Date').astype(float)
+            setattr(self, attr, df)
+    
+    def calculate_removals(self) -> pd.DataFrame:
+        self.removals_eng = self.additions_eng - self.stock_eng.diff() 
+        return self.removals_eng
+
+    def create_data_dict(self) -> dict:
+        self.data_dict = {
+            'stock_eng': self.stock_eng,
+            'additions_eng': self.additions_eng,
+            'removals_eng': self.removals_eng,
+            'v_lsoa': self.v_lsoa,
+            'icev_lsoa': self.icev_lsoa,
+            'ev_lsoa': self.ev_lsoa,
+            'bev_lsoa': self.bev_lsoa,
+            'phev_lsoa': self.phev_lsoa
+        }
+        return self.data_dict
+    
+    def select_lsoa_subset(self, df: pd.DataFrame, lsoa_subset: int | list) -> pd.DataFrame:
+        if isinstance(lsoa_subset, list):
+            self.lsoa_subset = lsoa_subset
+            if set(lsoa_subset).issubset(df.columns):
+                return df[lsoa_subset]
+            else:
+                raise ValueError("Subset must be a list of LSOA names that are present in the DataFrame.")
+        elif isinstance(lsoa_subset, int):
+            self.lsoa_subset = df.columns[:lsoa_subset]
+            if lsoa_subset < len(df.columns):
+                return df.iloc[:, :lsoa_subset]
+            else:
+                raise ValueError("Subset size must be less than the number of columns in the DataFrame.")
+        else:
+            raise ValueError("Subset must be either a list of LSOA names or an integer representing the size of the subset.")
+    
+    def convert_quarter_index_to_float(self, index: pd.Index) -> float:
+        year, quarter = index.split(' Q')
+        year = int(year)
+        quarter = int(quarter)
+        quarter_to_float = {1: 0.0, 2: 0.25, 3: 0.5, 4: 0.75}
+        return year + quarter_to_float[quarter]
+    
+    def annualise_data_sum(self, df: pd.DataFrame) -> pd.DataFrame:
+        df = df.copy()
+        df['Year'] = df.index.astype(int)
+        return df.groupby('Year').sum()
+    
+    def annualise_data_mean(self, df: pd.DataFrame) -> pd.DataFrame:
+        df = df.copy()
+        df['Year'] = df.index.astype(int)
+        return df.groupby('Year').mean().round()
+    
+    def annualise_data(self, df: pd.DataFrame, key: str) -> pd.DataFrame:
+        if key == 'additions_eng' or key == 'removals_eng':
+            df_y = self.annualise_data_sum(df)
+        else:
+            df_y = self.annualise_data_mean(df)
+        return df_y
+    
+    def select_date_range(self, df: pd.DataFrame, t_0_raw: int, t_n: int) -> pd.DataFrame:
+        return df.loc[t_0_raw:t_n]
+    
+    def calculate_market_share(self, df: pd.DataFrame, total: pd.DataFrame) -> pd.DataFrame:
+        return (df / total)
+    
+    def create_model_variables(self, t_0) -> dict:
+        A_v = self.annual_data_dict['additions_eng']['Total'].loc[t_0:].to_numpy()
+        R_v = self.annual_data_dict['removals_eng']['Total'].loc[t_0:].to_numpy()
+        total_vehicles = self.annual_data_dict['stock_eng']['Total'].loc[t_0:].to_numpy()
+
+        V_l = self.annual_data_dict['v_lsoa'].loc[t_0:].to_numpy().T
+        V_ev_l = self.annual_data_dict['ev_lsoa'].loc[t_0:].to_numpy().T
+        V_bev_l = self.annual_data_dict['bev_lsoa'].loc[t_0:].to_numpy().T
+        V_phev_l = self.annual_data_dict['phev_lsoa'].loc[t_0:].to_numpy().T
+
+        delta_V_l_obs = self.annual_data_dict['v_lsoa'].diff().loc[t_0:].to_numpy().T
+        delta_V_ev_l_obs = self.annual_data_dict['ev_lsoa'].diff().loc[t_0:].to_numpy().T
+        delta_V_bev_l_obs = self.annual_data_dict['bev_lsoa'].diff().loc[t_0:].to_numpy().T
+        delta_V_phev_l_obs = self.annual_data_dict['phev_lsoa'].diff().loc[t_0:].to_numpy().T
+
+        L, T = V_l.shape
+
+        self.model_variables_dict = {
+            'A_v': A_v,
+            'R_v': R_v,
+            'total_vehicles': total_vehicles,
+            'V_l': V_l,
+            'V_ev_l': V_ev_l,
+            'V_bev_l': V_bev_l,
+            'V_phev_l': V_phev_l,
+            'delta_V_l_obs': delta_V_l_obs,
+            'delta_V_ev_l_obs': delta_V_ev_l_obs,
+            'delta_V_bev_l_obs': delta_V_bev_l_obs,
+            'delta_V_phev_l_obs': delta_V_phev_l_obs,
+            'L': L,
+            'T': T
+        }
+
+        return self.model_variables_dict
+        
+    def prepare_data(self, data_path: str, file_names: dict, lsoa_subset: int | list, t_0: int, t_0_raw: int, t_n: int) -> None:
+        self.load_processed_data(data_path, file_names)
+        self.calculate_removals()
+        self.create_data_dict()
+        self.data_dict = {k: self.select_lsoa_subset(df, lsoa_subset) if not k.endswith('_eng') else df for k, df in self.data_dict.items()}
+        self.data_dict = {k: df.set_index(df.index.map(self.convert_quarter_index_to_float)) for k, df in self.data_dict.items()}
+        self.annual_data_dict = {k: self.annualise_data(df, k) for k, df in self.data_dict.items()}
+        self.annual_data_dict = {k: self.select_date_range(df, t_0_raw, t_n) for k, df in self.annual_data_dict.items()}
+        self.annual_data_dict['ev_market_share'] = self.calculate_market_share(self.annual_data_dict['ev_lsoa'], self.annual_data_dict['v_lsoa'])
+        self.annual_data_dict['bev_market_share'] = self.calculate_market_share(self.annual_data_dict['bev_lsoa'], self.annual_data_dict['v_lsoa'])
+        self.annual_data_dict['phev_market_share'] = self.calculate_market_share(self.annual_data_dict['phev_lsoa'], self.annual_data_dict['v_lsoa'])
+        self.create_model_variables(t_0)
+
 def main():
+
+    year_quarter = '2023_Q4'
+    LAD = 'Bath and North East Somerset'
+    raw_data_path = '../../data/large_datasets/vehicle_registrations/raw_data'
+    processed_data_path = '../../data/large_datasets/vehicle_registrations/processed_data'
+
     # National Vehicle Stock Data Processing
     national_vehicle_stock_data_processor = NationalVehicleStockDataProcessor()
-    raw_data_path = '../../data/large_datasets/vehicle_registrations/raw_data'
     meta_data = {
         'vehicle_stock': {
-            'file_name': 'veh0105_2023_Q4.ods',
+            'file_name': f'veh0105_{year_quarter}.ods',
             'sheet_name': 'VEH0105',
             'header': 4,
             'engine': 'odf'
         },
         'piv_stock': {
-            'file_name': 'veh0142_2023_Q4.ods',
+            'file_name': f'veh0142_{year_quarter}.ods',
             'sheet_name': 'VEH0142',
             'header': 4,
             'engine': 'odf'
@@ -396,13 +532,12 @@ def main():
         }
     }
     national_vehicle_stock_data_processor.run_pipeline(raw_data_path, meta_data,  filters_dict)
-    national_vehicle_stock_data_processor.save_data('../../data/large_datasets/vehicle_registrations/processed_data', '2023_Q4')
+    national_vehicle_stock_data_processor.save_data('../../data/large_datasets/vehicle_registrations/processed_data', year_quarter)
 
     # National Vehicle Sales Data Processing
     national_vehicle_sales_data_processor = NationalVehicleSalesDataProcessor()
-    raw_data_path = '../../data/large_datasets/vehicle_registrations/raw_data'
     meta_data = {
-        'file_name': 'veh1153_2023_Q4.ods',
+        'file_name': f'veh1153_{year_quarter}.ods',
         'sheet_name': 'VEH1153a_RoadUsing',
         'header': 4,
         'engine': 'odf'
@@ -429,22 +564,21 @@ def main():
         ]
     }
     national_vehicle_sales_data_processor.run_pipeline(raw_data_path, meta_data, filters_dict)
-    national_vehicle_sales_data_processor.save_data('../../data/large_datasets/vehicle_registrations/processed_data', '2023_Q4')
+    national_vehicle_sales_data_processor.save_data(processed_data_path, year_quarter)
     
     # LSOA Vehicle Registration Data Processing
     lsoa_vehicle_registration_data_processor = LSOAVehicleRegistrationDataProcessor(
         lsoa_lookup_path='../../data/large_datasets/spatial/LSOA_(2011)_to_LSOA_(2021)_to_Local_Authority_District_(2022)_Lookup_for_England_and_Wales_(Version_2).csv'
         )
-    raw_data_path = '../../data/large_datasets/vehicle_registrations/raw_data'
     meta_data = {
         'v_reg': {
-            'file_name': 'df_VEH0125_2023_Q4.csv',
+            'file_name': f'df_VEH0125_{year_quarter}.csv',
             'first': 5,
             'last': 57,
             'na_values': ['[c]', '[x]'],
         },
         'piv_reg': {
-            'file_name': 'df_VEH0145_2023_Q4.csv',
+            'file_name': f'df_VEH0145_{year_quarter}4.csv',
             'first': 5,
             'last': 56,
             'na_values': ['[c]', '[x]'],
@@ -460,9 +594,28 @@ def main():
             'dropped_cols': ['Keepership', 'LSOA11NM'] 
         }
     }
-    LAD = 'Bath and North East Somerset'
+    
     lsoa_vehicle_registration_data_processor.run_pipeline(raw_data_path, meta_data, filters_dict, LAD)
-    lsoa_vehicle_registration_data_processor.save_data('../../data/large_datasets/vehicle_registrations/processed_data', '2023_Q4')
+    lsoa_vehicle_registration_data_processor.save_data(processed_data_path, year_quarter)
+
+    # Vehicle Stock Model Data Prepper
+    vehicle_stock_model_data_prepper = VehicleStockModelDataPrepper()
+    file_names = {
+        'stock_eng': f'stock_df_{year_quarter}.csv',
+        'additions_eng': f'sales_df_{year_quarter}.csv',
+        'v_lsoa': f'v_lsoa_{year_quarter}.csv',
+        'icev_lsoa': f'icev_lsoa_{year_quarter}.csv',
+        'ev_lsoa': f'ev_lsoa_{year_quarter}.csv',
+        'bev_lsoa': f'bev_lsoa_{year_quarter}.csv',
+        'phev_lsoa': f'phev_lsoa_{year_quarter}.csv'
+    }
+    vehicle_stock_model_data_prepper.prepare_data(
+        data_path=processed_data_path, 
+        file_names=file_names, 
+        lsoa_subset=5, 
+        t_0=2012,
+        t_0_raw=2011, 
+        t_n=2023)
 
 if __name__ == '__main__':
     main()

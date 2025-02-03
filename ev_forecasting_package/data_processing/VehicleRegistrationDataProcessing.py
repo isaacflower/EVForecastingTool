@@ -568,7 +568,7 @@ def main():
     
     # LSOA Vehicle Registration Data Processing
     lsoa_vehicle_registration_data_processor = LSOAVehicleRegistrationDataProcessor(
-        lsoa_lookup_path='../../data/large_datasets/spatial/LSOA_(2011)_to_LSOA_(2021)_to_Local_Authority_District_(2022)_Lookup_for_England_and_Wales_(Version_2).csv'
+        lsoa_lookup_path='../../data/large_datasets/lsoa_boundaries/LSOA_(2011)_to_LSOA_(2021)_to_Local_Authority_District_(2022)_Lookup_for_England_and_Wales_(Version_2).csv'
         )
     meta_data = {
         'v_reg': {

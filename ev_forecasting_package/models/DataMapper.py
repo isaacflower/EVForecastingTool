@@ -11,6 +11,7 @@ class DataMapper:
             source_geometries: gpd.GeoSeries,
             target_geometries: gpd.GeoSeries,
             target_customer_counts: pd.Series,
+            probabilisitic_rho: bool
     ):
         self.source_geometries = source_geometries
         self.target_geometries = target_geometries
@@ -21,7 +22,7 @@ class DataMapper:
         self.rho_std_dev_df = pd.DataFrame(index=self.source_geometries.index, columns=self.target_geometries.index, data=0.0)
         self.mapped_data_params = None
         self.quantiles_dict = None
-        self.calculate_rhos()
+        self.calculate_rhos(probabilisitic_rho)
 
     def map_data(self, data_dict: dict) -> dict:
         self.mapped_data_params = {}
@@ -54,7 +55,7 @@ class DataMapper:
         std_dev = np.sqrt(a*b/(((a+b)**2)*(a+b+1)))
         return mean, std_dev
 
-    def calculate_rhos(self) -> tuple[pd.DataFrame, pd.DataFrame]:
+    def calculate_rhos(self, probabilistic: bool) -> tuple[pd.DataFrame, pd.DataFrame]:
         for source_idx in self.source_geometries.index:
             intersections_idxs, intersections = self.detect_intersections(source_idx)
             relative_intersectional_areas = self.calculate_relative_intersectional_areas(intersections_idxs, intersections)
@@ -62,7 +63,11 @@ class DataMapper:
             self.relative_intersectional_areas_df.loc[source_idx, intersections_idxs] = relative_intersectional_areas
             a = target_customers_in_source_geography
             b = target_customers_in_source_geography.sum(axis=0) - target_customers_in_source_geography
-            rho_mean, rho_std_dev = self.compute_beta_moments(a, b)
+            if probabilistic:
+                rho_mean, rho_std_dev = self.compute_beta_moments(a, b)
+            else:
+                rho_mean = target_customers_in_source_geography / target_customers_in_source_geography.sum(axis=0)
+                rho_std_dev = 0
             self.rho_mean_df.loc[source_idx, intersections_idxs] = rho_mean
             self.rho_std_dev_df.loc[source_idx, intersections_idxs] = rho_std_dev
         self.rho_mean_df.fillna(0, inplace=True)

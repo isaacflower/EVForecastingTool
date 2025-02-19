@@ -2,6 +2,7 @@ import pandas as pd
 import sys
 import os
 import pymc as pm
+import arviz as az
 
 class VehicleStockDynamicsInferenceModel:
     """
@@ -122,8 +123,12 @@ class VehicleStockDynamicsInferenceModel:
         return self.trace
     
     def save_trace(self, trace_path: str) -> None:
-        self.trace.to_netcdf(os.path.join(trace_path, 'vehicle_stock_dynamics_model_trace.nc'))
+        self.trace.to_netcdf(trace_path)
         print(f"Trace saved to {trace_path}")
+
+    def load_trace(self, trace_path: str) -> None:
+        self.trace = az.from_netcdf({trace_path})
+        print(f"Trace loaded from {trace_path}")
     
     def _create_lsoa_data_dict(self):
         lsoa_data_dict = {}
@@ -201,7 +206,7 @@ def main():
     )
     model.build_model()
     trace = model.sample()
-    model.save_trace('.')
+    model.save_trace('vehicle_stock_dynamics_model_trace.nc')
     posterior_means = model.calculate_posterior_means()
 
 if __name__ == "__main__":

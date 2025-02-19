@@ -127,7 +127,7 @@ class VehicleStockDynamicsInferenceModel:
         print(f"Trace saved to {trace_path}")
 
     def load_trace(self, trace_path: str) -> None:
-        self.trace = az.from_netcdf({trace_path})
+        self.trace = az.from_netcdf(trace_path)
         print(f"Trace loaded from {trace_path}")
     
     def _create_lsoa_data_dict(self):

@@ -392,7 +392,7 @@ class VehicleStockModelDataPrepper:
             if lsoa_subset <= len(df.columns):
                 return df.iloc[:, :lsoa_subset]
             else:
-                raise ValueError("Subset size must be less than the number of columns in the DataFrame.")
+                raise ValueError("Subset size must be less than or equal to the number of columns in the DataFrame.")
         else:
             raise ValueError("Subset must be either a list of LSOA names or an integer representing the size of the subset.")
     

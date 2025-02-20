@@ -123,6 +123,8 @@ class VehicleStockDynamicsInferenceModel:
         return self.trace
     
     def save_trace(self, trace_path: str) -> None:
+        if os.path.exists(trace_path):
+            os.remove(trace_path)
         self.trace.to_netcdf(trace_path)
         print(f"Trace saved to {trace_path}")
 
